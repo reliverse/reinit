@@ -1,7 +1,7 @@
 {
   "name": "@reliverse/reinit-cli",
-  "version": "1.0.0",
-  "description": "@reliverse/reinit provides an automated way to initialize single or multiple files",
+  "version": "1.0.1",
+  "description": "@reliverse/reinit is your buddy for bootstrapping the boring stuff — so you can jump straight into building the good stuff.",
   "type": "module",
   "scripts": {
     "dev": "bun src/main.ts --dev",
@@ -15,6 +15,7 @@
     "pathe": "^2.0.3"
   },
   "devDependencies": {
+    "@reliverse/cli-cfg": "^1.6.2",
     "@reliverse/relidler-cfg": "^1.1.3",
     "@types/fs-extra": "^11.0.4"
   }

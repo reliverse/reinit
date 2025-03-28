@@ -1,6 +1,6 @@
-import { defineCommand, errorHandler, multiselectPrompt, runMain, selectPrompt } from "@reliverse/prompts";
+import { defineCommand, errorHandler, multiselectPrompt, relinka, runMain, selectPrompt } from "@reliverse/prompts";
 import { initFile, initFiles } from "./libs/reinit/reint-impl/mod";
-import { InitFileRequest } from "./libs/reinit/reint-impl/types";
+import { FileType, InitFileRequest } from "./libs/reinit/reint-impl/types";
 import { FILE_TYPES } from "./libs/reinit/reint-impl/const";
 
 const main = defineCommand({
@@ -48,6 +48,13 @@ const main = defineCommand({
     const { fileType, destDir, multiple, parallel, concurrency } = args;
     const concurrencyNum = Number(concurrency);
 
+    // throw error if fileType doesn't include FILE_TYPES.type
+    if (fileType && !FILE_TYPES.find((ft) => ft.type === fileType)) {
+      throw new Error(`Invalid file type: ${fileType}`);
+    }
+
+    const effectiveFileType: FileType = fileType as FileType;
+
     if (multiple) {
       // Let the user choose multiple file types from a prompt
       const possibleTypes = FILE_TYPES.map((ft) => ft.type);
@@ -57,7 +64,7 @@ const main = defineCommand({
       });
 
       if (chosen.length === 0) {
-        console.log("No file types selected. Exiting...");
+        relinka("info", "No file types selected. Exiting...");
         return;
       }
 
@@ -68,10 +75,10 @@ const main = defineCommand({
       }));
 
       const results = await initFiles(requests, { parallel, concurrency: concurrencyNum });
-      console.log("Multiple files result:", results);
+      relinka("info-verbose", `Multiple files result: ${JSON.stringify(results)}`);
     } else {
       // Single file approach
-      let finalFileType = fileType;
+      let finalFileType = effectiveFileType;
       if (!finalFileType) {
         // If user didn't specify, prompt for a single file type
         const possibleTypes = FILE_TYPES.map((ft) => ft.type);
@@ -86,7 +93,7 @@ const main = defineCommand({
         fileType: finalFileType,
         destDir,
       });
-      console.log("Single file result:", result);
+      relinka("log-verbose", `Single file result: ${JSON.stringify(result)}`);
     }
   },
 });

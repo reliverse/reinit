@@ -2,7 +2,7 @@
 
 [💖 GitHub Sponsors](https://github.com/sponsors/blefnk) • [💬 Discord](https://discord.gg/Pb8uKbwpsJ) • [📦 NPM](https://npmjs.com/@reliverse/reinit-cli) • [📚 Docs](https://blefnk.reliverse.org/blog/my-products/reinit)
 
-**@reliverse/reinit** is your terminal-sidekick for bootstrapping the boring stuff — so you can jump straight into building the good stuff.
+**@reliverse/reinit** is your buddy for bootstrapping the boring stuff — so you can jump straight into building the good stuff.
 
 - Need a `README.md`? `.gitignore`? `eslint.config.js`? Boom — done.
 - Configs, docs, boilerplate — Reinit helps you set them up in seconds, not hours.
@@ -37,31 +37,31 @@ bun x @reliverse/reinit-cli
 Run without arguments to launch interactive mode:
 
 ```bash
-reinit
+reinit-cli
 ```
 
 ### Generate a specific file
 
 ```bash
-reinit --fileType md:README
+reinit-cli --fileType md:README
 ```
 
 ### Generate multiple files
 
 ```bash
-reinit --multiple
+reinit-cli --multiple
 ```
 
 Add `--parallel` to go even faster:
 
 ```bash
-reinit --multiple --parallel --concurrency 3
+reinit-cli --multiple --parallel --concurrency 3
 ```
 
 ### Custom destination
 
 ```bash
-reinit --fileType git:gitignore --destDir ./my-folder
+reinit-cli --fileType git:gitignore --destDir ./my-folder
 ```
 
 ## 🧩 Supported File Types

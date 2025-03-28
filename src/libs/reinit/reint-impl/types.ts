@@ -1,9 +1,8 @@
-import { CONTENT_CREATE_MODES, DEST_FILE_EXISTS_BEHAVIOURS, FILE_TYPES, INIT_BEHAVIOURS } from "./const";
+import { DEST_FILE_EXISTS_BEHAVIOURS, FILE_TYPES, INIT_BEHAVIOURS } from "./const";
 
 export type FileType = (typeof FILE_TYPES)[number]["type"];
 export type InitBehaviour = (typeof INIT_BEHAVIOURS)[number];
-export type DestFileExistsBehaviour = (typeof DEST_FILE_EXISTS_BEHAVIOURS)[number];
-export type ContentCreateMode = (typeof CONTENT_CREATE_MODES)[number];  
+export type DestFileExistsBehaviour = (typeof DEST_FILE_EXISTS_BEHAVIOURS)[number]; 
 
 /** Library-level interface for hooking into the file init process. */
 export interface ReinitUserConfig {
@@ -23,7 +22,7 @@ export interface ReinitUserConfig {
 
 /** Data describing a single request to initFile. */
 export interface InitFileRequest {
-  fileType: string;
+  fileType: FileType;
   destDir: string;
   initBehaviour?: InitBehaviour;
   destFileExistsBehaviour?: DestFileExistsBehaviour;

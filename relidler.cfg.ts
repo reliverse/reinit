@@ -12,7 +12,7 @@ export default defineConfig({
   bumpMode: "autoPatch",
   
   // Common configuration
-  commonPubPause: true,
+  commonPubPause: false,
   commonPubRegistry: "npm-jsr",
   commonVerbose: false,
 
@@ -42,13 +42,13 @@ export default defineConfig({
   // Publish specific dirs as separate packages
   // This feature is experimental at the moment
   // Please commit your changes before using it
-  libsActMode: "main-project-only",
+  libsActMode: "main-and-libs",
   libsDirDist: "dist-libs",
   libsDirSrc: "src/libs",
   libsList: {
   "@reliverse/reinit": {
     libDeclarations: true,
-    libDescription: "@reliverse/reinit — init anything",
+    libDescription: "@reliverse/reinit is your buddy for bootstrapping the boring stuff — so you can jump straight into building the good stuff.",
     libDirName: "reinit",
     libMainFile: "reinit/reinit-main.ts",
     libPkgKeepDeps: true,

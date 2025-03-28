@@ -3,59 +3,73 @@ import path from "pathe";
 import pMap from "p-map";
 import { loadConfig } from "c12";
 import { relinka, selectPrompt } from "@reliverse/prompts";
-import { DestFileExistsBehaviour, InitBehaviour, InitFileRequest, InitFileResult, ReinitUserConfig } from "./types";
+import {
+  DestFileExistsBehaviour,
+  FileType,
+  InitBehaviour,
+  InitFileRequest,
+  InitFileResult,
+  ReinitUserConfig,
+} from "./types";
 import { FILE_TYPES } from "./const";
 import { escapeMarkdownCodeBlocks } from "./utils";
-import { licenseTemplate, readmeTemplate } from "../reinit-main";
+import { licenseTemplate } from "./templates/t-license";
+import { readmeTemplate } from "./templates/t-readme";
+import { gitignoreTemplate } from "./templates/t-gitignore";
 
-/** Creation from scratch */
+/**
+ * Creates a file from scratch, including parent directories,
+ * basing the file content on the fileType.
+ */
 export async function createFileFromScratch(
   destPath: string,
-  fileType: string,
+  fileType: FileType, // e.g. "cfg:eslint", "md:LICENSE", "md:README", ...
   contentCreateMode?: string,
 ) {
   // Ensure parent directory
   await fs.ensureDir(path.dirname(destPath));
-  
-  let content = "";
 
-  switch (contentCreateMode) {
-    case "license-basic":
+  let content = "";
+  switch (fileType) {
+    case "md:LICENSE":
       content = licenseTemplate;
       break;
-    case "simple-readme":
+    case "md:README":
       content = escapeMarkdownCodeBlocks(readmeTemplate);
+      break;
+    case "git:gitignore":
+      content = gitignoreTemplate;
       break;
     default:
       content = `// Auto-generated file for type: ${fileType}`;
       break;
   }
 
+  if (contentCreateMode) {
+   content = contentCreateMode;
+   relinka("info-verbose", `Using custom content for file ${destPath}`);
+  }
+
   await fs.outputFile(destPath, content, { encoding: "utf-8" });
 }
 
- 
 /**
- * Loads user config from reinit.config.(ts|js|json...) using c12 and merges 
- * with fallback defaults. For environment-based config, extends, etc.
- * @see https://unjs.io/packages/c12
+ * Loads user config from `reinit.config.(ts|js|json...)` using c12 
+ * and merges with fallback defaults.
  */
 async function loadReinitConfig(): Promise<ReinitUserConfig> {
   const { config } = await loadConfig<ReinitUserConfig>({
-    name: "reinit", // c12 tries reinit.config, .reinitrc, etc.
-    // configFile: "reinit.config", // If we want to enforce the file name
-    // rcFile: ".reinitrc",         // Or a .reinitrc
-    defaults: {},   // base defaults
-    overrides: {},  // highest priority overrides
+    name: "reinit",
+    defaults: {},
+    overrides: {},
     dotenv: false,
     packageJson: false,
   });
 
-  // Fallback in case user config is missing or partial
   const merged: ReinitUserConfig = {
-    defaultInitBehaviour: config.defaultInitBehaviour ?? "create-if-copy-failed",
+    defaultInitBehaviour: config.defaultInitBehaviour ?? "create",
     defaultDestFileExistsBehaviour:
-      config.defaultDestFileExistsBehaviour ?? "rewrite",
+      config.defaultDestFileExistsBehaviour ?? "prompt",
     parallelByDefault: config.parallelByDefault ?? false,
     parallelConcurrency: config.parallelConcurrency ?? 4,
     onFileStart: config.onFileStart,
@@ -66,18 +80,16 @@ async function loadReinitConfig(): Promise<ReinitUserConfig> {
 
 /** 
  * Single-file initialization using the merged config. 
- * @returns A structured result describing the operation (created, copied, skipped, error).
  */
 export async function initFile(
   req: InitFileRequest,
   userCfg?: ReinitUserConfig,
 ): Promise<InitFileResult> {
-  // Merge with user config from c12 if none provided
   const config = userCfg ?? (await loadReinitConfig());
   const initBehaviour = req.initBehaviour ?? config.defaultInitBehaviour!;
-  const existsBehaviour = req.destFileExistsBehaviour ?? config.defaultDestFileExistsBehaviour!;
+  const existsBehaviour =
+    req.destFileExistsBehaviour ?? config.defaultDestFileExistsBehaviour!;
 
-  // Fire "onFileStart" if provided
   config.onFileStart?.(req);
 
   let result: InitFileResult;
@@ -91,7 +103,6 @@ export async function initFile(
     };
   }
 
-  // Fire "onFileComplete"
   config.onFileComplete?.(result);
   return result;
 }
@@ -107,22 +118,15 @@ export async function initFiles(
 ): Promise<InitFileResult[]> {
   const config = userCfg ?? (await loadReinitConfig());
 
-  // Decide parallel or sequential
-  const parallel = 
+  const parallel =
     typeof options?.parallel === "boolean"
       ? options.parallel
       : config.parallelByDefault;
 
-  // Decide concurrency
-  const concurrency = 
-    options?.concurrency ?? config.parallelConcurrency ?? 4;
+  const concurrency = options?.concurrency ?? config.parallelConcurrency ?? 4;
 
   if (parallel) {
-    return pMap(
-      items,
-      (item) => initFile(item, config),
-      { concurrency },
-    );
+    return pMap(items, (item) => initFile(item, config), { concurrency });
   } else {
     const results: InitFileResult[] = [];
     for (const item of items) {
@@ -134,7 +138,6 @@ export async function initFiles(
 
 /** 
  * The main logic for creating or copying a file.
- * (Don't call this directly; call initFile or initFiles)
  */
 async function doInitFile(
   req: InitFileRequest,
@@ -142,16 +145,15 @@ async function doInitFile(
   destFileExistsBehaviour: DestFileExistsBehaviour,
 ): Promise<InitFileResult> {
   const { fileType, destDir, options } = req;
-  const { destFileName, srcCopyMode, contentCreateMode, fallbackSource } = options ?? {};
+  const { destFileName, srcCopyMode, fallbackSource } = options ?? {};
 
-  // 1) Identify known file type ignoring case
+  // Look up known variations for the fileType
   const knownType = FILE_TYPES.find(
     (f) => f.type.toLowerCase() === fileType.toLowerCase(),
   );
-  // If not recognized, fallback to single variation = same as fileType
-  let variations = knownType ? knownType.variations : [fileType];
+  const variations = knownType ? knownType.variations : [fileType];
 
-  // Possibly prompt user if multiple variations
+  // Possibly prompt if multiple variations exist
   let chosenVariation: string;
   if (variations.length === 1) {
     chosenVariation = variations[0];
@@ -162,77 +164,125 @@ async function doInitFile(
     });
   }
 
-  // 2) Final name
   const finalName = destFileName ?? chosenVariation;
-  const destPath = path.join(destDir, finalName);
 
-  // 3) Check if file already exists
-  let alreadyExists = await fs.pathExists(destPath);
+  // Convert destDir to absolute path
+  const absoluteDestDir = path.resolve(process.cwd(), destDir || "");
+  const resolvedDestPath = path.join(absoluteDestDir, finalName);
+
+  relinka("info-verbose", `Preparing to init file:
+  - File Type: ${fileType}
+  - Variation: ${chosenVariation}
+  - Destination Dir: ${absoluteDestDir}
+  - Final Path: ${resolvedDestPath}
+  `);
+
+  // If file already exists
+  const alreadyExists = await fs.pathExists(resolvedDestPath);
   if (alreadyExists) {
-    const maybeNewDest = await handleExistingFile(destPath, destFileExistsBehaviour);
+    const maybeNewDest = await handleExistingFile(resolvedDestPath, destFileExistsBehaviour);
     if (!maybeNewDest) {
-      // user chose skip
       return {
         requested: req,
         status: "skipped",
       };
     }
-    if (maybeNewDest !== destPath) {
-      // We have a new path
-      alreadyExists = false;
+    if (maybeNewDest !== resolvedDestPath) {
+      // e.g., attach-index was chosen
+      relinka("info", `attach-index or rename => ${maybeNewDest}`);
+      return await finalizeInit(req, initBehaviour, chosenVariation, maybeNewDest);
     }
   }
 
-  // 4) Based on initBehaviour
-  switch (initBehaviour) {
-    case "copy":
-      return await runCopy(req, chosenVariation, destPath);
-    case "create":
-      return await runCreate(req, destPath);
-    case "create-if-copy-failed":
-    default:
-      // Attempt copy, fallback to create
-      try {
-        return await runCopy(req, chosenVariation, destPath);
-      } catch (err) {
-        relinka("warn", `Copy failed for ${chosenVariation}, fallback to create...`);
-        return await runCreate(req, destPath);
-      }
+  return await finalizeInit(req, initBehaviour, chosenVariation, resolvedDestPath);
+}
+
+/** Reusable helper to finalize creation or copy after we pick a path. */
+async function finalizeInit(
+  req: InitFileRequest,
+  initBehaviour: InitBehaviour,
+  chosenVariation: string,
+  resolvedDestPath: string,
+): Promise<InitFileResult> {
+  try {
+    switch (initBehaviour) {
+      case "copy":
+        return await runCopy(req, chosenVariation, resolvedDestPath);
+      case "create":
+        return await runCreate(req, resolvedDestPath);
+      // If user or config explicitly sets "create-if-copy-failed" or something else
+      case "create-if-copy-failed":
+      default:
+        try {
+          return await runCopy(req, chosenVariation, resolvedDestPath);
+        } catch (err) {
+          relinka("warn", `Copy failed for ${chosenVariation}, fallback to create...`);
+          return await runCreate(req, resolvedDestPath);
+        }
+    }
+  } catch (error) {
+    throw error;
   }
 }
 
-/** Attempt to copy from `cwd` or srcCopyMode. If that fails, fallback. */
 async function runCopy(
   req: InitFileRequest,
   chosenVariation: string,
-  destPath: string,
+  resolvedDestPath: string,
 ): Promise<InitFileResult> {
   const { srcCopyMode, fallbackSource } = req.options ?? {};
-  try {
-    await tryCopy(chosenVariation, srcCopyMode, destPath);
-    relinka("info", `Copied file: ${chosenVariation} -> ${destPath}`);
+  const resolvedSrcDir = path.resolve(process.cwd(), srcCopyMode || "");
+  const sourcePath = path.join(resolvedSrcDir, chosenVariation);
+
+  if (sourcePath === resolvedDestPath) {
+    relinka("warn", `Source path equals destination => doing a no-op: ${sourcePath}`);
     return {
       requested: req,
-      finalPath: destPath,
+      finalPath: resolvedDestPath,
+      status: "copied",
+    };
+  }
+
+  relinka("info", `Attempting copy:
+  - Source Dir: ${resolvedSrcDir}
+  - Source Path: ${sourcePath}
+  - Destination Path: ${resolvedDestPath}
+  `);
+
+  try {
+    await fs.ensureDir(path.dirname(resolvedDestPath));
+
+    if (!(await fs.pathExists(sourcePath))) {
+      throw new Error(`Source file not found: ${sourcePath}`);
+    }
+    await fs.copy(sourcePath, resolvedDestPath, { overwrite: true });
+    relinka("info", `Copied file: ${chosenVariation} -> ${resolvedDestPath}`);
+    return {
+      requested: req,
+      finalPath: resolvedDestPath,
       status: "copied",
     };
   } catch (primaryErr) {
-    // If fallback is provided, attempt that
     if (fallbackSource) {
       relinka("warn", `Primary copy failed, trying fallback: ${fallbackSource}`);
+      const fallbackFullPath = path.join(resolvedSrcDir, fallbackSource);
       try {
-        await tryCopy(fallbackSource, null, destPath);
-        relinka("info", `Fallback copy: ${fallbackSource} -> ${destPath}`);
+        await fs.ensureDir(path.dirname(resolvedDestPath));
+        if (!(await fs.pathExists(fallbackFullPath))) {
+          throw new Error(`Fallback source file not found: ${fallbackFullPath}`);
+        }
+        await fs.copy(fallbackFullPath, resolvedDestPath, { overwrite: true });
+        relinka("info", `Fallback copy: ${fallbackSource} -> ${resolvedDestPath}`);
         return {
           requested: req,
-          finalPath: destPath,
+          finalPath: resolvedDestPath,
           status: "copied",
         };
       } catch (fallbackErr) {
         throw new Error(
           `Primary copy error: ${String(primaryErr)}\nFallback copy error: ${String(
-            fallbackErr,
-          )}`,
+            fallbackErr
+          )}`
         );
       }
     }
@@ -240,37 +290,23 @@ async function runCopy(
   }
 }
 
-/** Create file from scratch. Provide different strategies or placeholders. */
 async function runCreate(
   req: InitFileRequest,
-  destPath: string,
+  resolvedDestPath: string,
 ): Promise<InitFileResult> {
-  const { fileType } = req;
-  const { contentCreateMode } = req.options ?? {};
+  relinka("info-verbose", `Creating file from scratch at: ${resolvedDestPath}`);
 
-  await createFileFromScratch(destPath, fileType, contentCreateMode);
-  relinka("info", `Created file from scratch: ${destPath}`);
+  // The "fileType" is used to decide how to create content inside `createFileFromScratch`
+  const { fileType } = req;
+
+  await createFileFromScratch(resolvedDestPath, fileType);
+  relinka("info-verbose", `Created file from scratch: ${resolvedDestPath}`);
   return {
     requested: req,
-    finalPath: destPath,
+    finalPath: resolvedDestPath,
     status: "created",
   };
-} 
-
-/** Actually copy a file from base path. */
-async function tryCopy(sourceFile: string, srcCopyMode: string | null | undefined, destPath: string) {
-  const basePath = srcCopyMode
-    ? path.resolve(process.cwd(), srcCopyMode)
-    : process.cwd();
-
-  const sourcePath = path.join(basePath, sourceFile);
-  if (!(await fs.pathExists(sourcePath))) {
-    throw new Error(`Source file not found: ${sourcePath}`);
-  }
-  await fs.copy(sourcePath, destPath, { overwrite: true });
 }
-
-
 
 /** If file exists, handle rewrite, skip, attach-index, or prompt. */
 async function handleExistingFile(
@@ -279,13 +315,16 @@ async function handleExistingFile(
 ): Promise<string | null> {
   switch (behaviour) {
     case "rewrite":
-      relinka("warn", `File exists, rewriting: ${destPath}`);
+      relinka("warn", `File exists, rewriting in-place: ${destPath}`);
       return destPath;
+
     case "skip":
       relinka("warn", `File exists, skipping: ${destPath}`);
       return null;
+
     case "attach-index":
       return attachIndex(destPath);
+
     case "prompt":
       const choice = await selectPrompt({
         title: `File exists: ${path.basename(destPath)}. How to handle?`,
@@ -296,7 +335,10 @@ async function handleExistingFile(
         ],
       });
       if (choice === "skip") return null;
-      if (choice === "attachIndex") return attachIndex(destPath);
+      if (choice === "attachIndex") {
+        return attachIndex(destPath);
+      }
+      relinka("warn", `Overwriting in-place: ${destPath}`);
       return destPath;
   }
 }
